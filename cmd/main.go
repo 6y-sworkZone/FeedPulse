@@ -65,8 +65,8 @@ func main() {
 			auth.GET("/groups", handlers.GetGroups)
 			auth.PUT("/groups/:id", handlers.UpdateGroup)
 			auth.DELETE("/groups/:id", handlers.DeleteGroup)
-			auth.POST("/groups/:groupId/feeds/:feedId", handlers.AddFeedToGroup)
-			auth.DELETE("/groups/:groupId/feeds/:feedId", handlers.RemoveFeedFromGroup)
+			auth.POST("/groups/:group_id/feeds/:feed_id", handlers.AddFeedToGroup)
+			auth.DELETE("/groups/:group_id/feeds/:feed_id", handlers.RemoveFeedFromGroup)
 
 			auth.PUT("/feeds/:id/fetch-interval", handlers.UpdateFeedFetchInterval)
 

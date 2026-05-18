@@ -137,19 +137,60 @@ class FeedPulseApp {
             ...(this.token && { 'Authorization': `Bearer ${this.token}` })
         };
 
-        const response = await fetch(`/api${endpoint}`, {
-            headers,
-            ...options
-        });
+        try {
+            const response = await fetch(`/api${endpoint}`, {
+                headers,
+                ...options
+            });
 
-        if (response.status === 401) {
-            this.token = null;
-            localStorage.removeItem('token');
-            this.showAuth();
-            throw new Error('Unauthorized');
+            if (response.status === 401) {
+                this.token = null;
+                localStorage.removeItem('token');
+                this.showAuth();
+                throw new Error('Unauthorized');
+            }
+
+            const result = await response.json();
+            if (result.error) {
+                throw new Error(result.error);
+            }
+            return result;
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    showToast(message, type = 'error') {
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+        toast.textContent = message;
+        toast.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            border-radius: 8px;
+            color: white;
+            font-weight: 500;
+            z-index: 10000;
+            animation: slideIn 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        `;
+        
+        if (type === 'success') {
+            toast.style.background = '#4CAF50';
+        } else if (type === 'error') {
+            toast.style.background = '#f44336';
+        } else {
+            toast.style.background = '#2196F3';
         }
 
-        return response.json();
+        document.body.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.style.animation = 'slideOut 0.3s ease';
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
     }
 
     async login() {
@@ -428,6 +469,7 @@ class FeedPulseApp {
         document.getElementById('modal').classList.remove('hidden');
         document.getElementById('modal-body').innerHTML = `
             <h2>添加订阅</h2>
+            <div id="error-message" class="error-message hidden" style="color: #f44336; padding: 10px; background: #ffebee; border-radius: 4px; margin-bottom: 15px;"></div>
             <div class="form-group">
                 <label>Feed 地址或网站 URL</label>
                 <input type="url" id="feed-url-input" placeholder="https://example.com/feed.xml" required>
@@ -439,47 +481,74 @@ class FeedPulseApp {
             <button id="add-feed-confirm" class="btn btn-primary">添加</button>
         `;
 
+        const showError = (message) => {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.textContent = message;
+            errorDiv.classList.remove('hidden');
+        };
+
+        const hideError = () => {
+            document.getElementById('error-message').classList.add('hidden');
+        };
+
         document.getElementById('discover-btn').addEventListener('click', async () => {
             const url = document.getElementById('feed-url-input').value;
-            if (!url) return;
+            if (!url) {
+                showError('请输入URL地址');
+                return;
+            }
 
-            const result = await this.api(`/feeds/discover?url=${encodeURIComponent(url)}`);
-            const feeds = result.feeds || [];
-            
-            const container = document.getElementById('discovered-feeds');
-            container.classList.remove('hidden');
-            
-            if (feeds.length === 0) {
-                container.innerHTML = '<p>未发现可用的 Feed</p>';
-            } else {
-                container.innerHTML = `
-                    <p>发现以下 Feed:</p>
-                    <ul>
-                        ${feeds.map(f => `<li><a href="#" class="feed-link" data-url="${f}">${f}</a></li>`).join('')}
-                    </ul>
-                `;
+            hideError();
+            try {
+                const result = await this.api(`/feeds/discover?url=${encodeURIComponent(url)}`);
+                const feeds = result.feeds || [];
                 
-                container.querySelectorAll('.feed-link').forEach(link => {
-                    link.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        document.getElementById('feed-url-input').value = link.dataset.url;
+                const container = document.getElementById('discovered-feeds');
+                container.classList.remove('hidden');
+                
+                if (feeds.length === 0) {
+                    container.innerHTML = '<p style="color: #ff9800;">未发现可用的 Feed，请直接输入 RSS/Atom 订阅地址</p>';
+                } else {
+                    container.innerHTML = `
+                        <p>发现以下 Feed:</p>
+                        <ul>
+                            ${feeds.map(f => `<li><a href="#" class="feed-link" data-url="${f}">${f}</a></li>`).join('')}
+                        </ul>
+                    `;
+                    
+                    container.querySelectorAll('.feed-link').forEach(link => {
+                        link.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            document.getElementById('feed-url-input').value = link.dataset.url;
+                        });
                     });
-                });
+                }
+            } catch (error) {
+                showError(`发现Feed失败: ${error.message}`);
             }
         });
 
         document.getElementById('add-feed-confirm').addEventListener('click', async () => {
             const url = document.getElementById('feed-url-input').value;
-            if (!url) return;
+            if (!url) {
+                showError('请输入URL地址');
+                return;
+            }
 
-            await this.api('/feeds', {
-                method: 'POST',
-                body: JSON.stringify({ url })
-            });
+            hideError();
+            try {
+                await this.api('/feeds', {
+                    method: 'POST',
+                    body: JSON.stringify({ url })
+                });
 
-            this.closeModal();
-            this.loadFeeds();
-            this.loadArticles();
+                this.closeModal();
+                this.showToast('订阅添加成功！', 'success');
+                this.loadFeeds();
+                this.loadArticles();
+            } catch (error) {
+                showError(error.message || '添加订阅失败，请重试');
+            }
         });
     }
 

@@ -11,8 +11,6 @@ import (
 	"feedpulse/internal/utils"
 )
 
-var lastCrawlTimes = make(map[int64]time.Time)
-
 func CrawlAllFeeds() {
 	log.Println("Starting scheduled feed crawl...")
 
@@ -85,10 +83,7 @@ func CrawlFeed(feedID int64, feedURL string) error {
 			guid = item.Link
 		}
 
-		author := ""
-		if item.Author != nil {
-			author = item.Author.Name
-		}
+		author := getAuthor(item)
 
 		content := item.Content
 		if content == "" {

@@ -1,18 +1,55 @@
 package services
 
 import (
+	"net/url"
 	"strings"
+	"syscall"
 	"time"
 
 	"feedpulse/internal/database"
 	"feedpulse/internal/models"
 	"feedpulse/internal/utils"
+
+	"github.com/mmcdole/gofeed"
 )
 
+type FeedError struct {
+	Type    string `json:"type"`
+	Message string `json:"message"`
+}
+
+func (e *FeedError) Error() string {
+	return e.Message
+}
+
 func AddFeed(userID int64, feedURL string) (*models.Feed, error) {
+	if _, err := url.ParseRequestURI(feedURL); err != nil {
+		return nil, &FeedError{
+			Type:    "invalid_url",
+			Message: "无效的URL格式，请检查输入",
+		}
+	}
+
 	parsedFeed, err := utils.FetchFeed(feedURL)
 	if err != nil {
-		return nil, err
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "timeout") || strings.Contains(errMsg, "i/o timeout") ||
+			strings.Contains(errMsg, syscall.ETIMEDOUT.Error()) {
+			return nil, &FeedError{
+				Type:    "network_timeout",
+				Message: "网络连接超时，请检查网络或稍后重试",
+			}
+		}
+		if strings.Contains(errMsg, "connection refused") || strings.Contains(errMsg, "no such host") {
+			return nil, &FeedError{
+				Type:    "network_error",
+				Message: "无法连接到服务器，请检查URL是否正确",
+			}
+		}
+		return nil, &FeedError{
+			Type:    "parse_error",
+			Message: "RSS/Atom解析失败，请确认这是一个有效的订阅源",
+		}
 	}
 
 	result, err := database.DB.Exec(
@@ -21,7 +58,16 @@ func AddFeed(userID int64, feedURL string) (*models.Feed, error) {
 		userID, feedURL, parsedFeed.Title, parsedFeed.Description, parsedFeed.Link,
 	)
 	if err != nil {
-		return nil, err
+		if strings.Contains(err.Error(), "UNIQUE constraint") {
+			return nil, &FeedError{
+				Type:    "duplicate",
+				Message: "该订阅源已存在",
+			}
+		}
+		return nil, &FeedError{
+			Type:    "database_error",
+			Message: "保存订阅失败",
+		}
 	}
 
 	feedID, err := result.LastInsertId()
@@ -52,9 +98,9 @@ func AddFeed(userID int64, feedURL string) (*models.Feed, error) {
 	return GetFeedByID(feedID)
 }
 
-func getAuthor(item interface{}) string {
-	if i, ok := item.(*struct{ Author string }); ok {
-		return i.Author
+func getAuthor(item *gofeed.Item) string {
+	if item.Author != nil {
+		return item.Author.Name
 	}
 	return ""
 }

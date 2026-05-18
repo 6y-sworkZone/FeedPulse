@@ -125,13 +125,23 @@ func AddFeed(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "URL不能为空", "type": "invalid_input"})
 		return
 	}
 
 	feed, err := services.AddFeed(userID, req.URL)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add feed"})
+		if feedErr, ok := err.(*services.FeedError); ok {
+			statusCode := http.StatusBadRequest
+			if feedErr.Type == "network_timeout" || feedErr.Type == "network_error" {
+				statusCode = http.StatusGatewayTimeout
+			} else if feedErr.Type == "database_error" {
+				statusCode = http.StatusInternalServerError
+			}
+			c.JSON(statusCode, gin.H{"error": feedErr.Message, "type": feedErr.Type})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "添加订阅失败", "type": "unknown"})
 		return
 	}
 
@@ -218,12 +228,12 @@ func GetGroups(c *gin.Context) {
 func AddFeedToGroup(c *gin.Context) {
 	userID := c.GetInt64("userID")
 	_ = userID
-	groupID, err := strconv.ParseInt(c.Param("groupId"), 10, 64)
+	groupID, err := strconv.ParseInt(c.Param("group_id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group ID"})
 		return
 	}
-	feedID, err := strconv.ParseInt(c.Param("feedId"), 10, 64)
+	feedID, err := strconv.ParseInt(c.Param("feed_id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid feed ID"})
 		return
@@ -240,12 +250,12 @@ func AddFeedToGroup(c *gin.Context) {
 func RemoveFeedFromGroup(c *gin.Context) {
 	userID := c.GetInt64("userID")
 	_ = userID
-	groupID, err := strconv.ParseInt(c.Param("groupId"), 10, 64)
+	groupID, err := strconv.ParseInt(c.Param("group_id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group ID"})
 		return
 	}
-	feedID, err := strconv.ParseInt(c.Param("feedId"), 10, 64)
+	feedID, err := strconv.ParseInt(c.Param("feed_id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid feed ID"})
 		return
