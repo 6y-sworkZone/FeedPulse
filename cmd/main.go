@@ -19,10 +19,16 @@ func main() {
 	defer database.Close()
 
 	c := cron.New()
-	c.AddFunc("@every 30m", func() {
-		log.Println("Starting scheduled feed crawl...")
+	c.AddFunc("@every 15m", func() {
 		services.CrawlAllFeeds()
-		log.Println("Scheduled feed crawl completed")
+	})
+	c.AddFunc("@hourly", func() {
+		log.Println("Processing hourly webhook digest...")
+		services.ProcessHourlyWebhookDigest()
+	})
+	c.AddFunc("@daily", func() {
+		log.Println("Processing daily webhook digest...")
+		services.ProcessDailyWebhookDigest()
 	})
 	c.Start()
 	defer c.Stop()
@@ -57,9 +63,12 @@ func main() {
 
 			auth.POST("/groups", handlers.CreateGroup)
 			auth.GET("/groups", handlers.GetGroups)
+			auth.PUT("/groups/:id", handlers.UpdateGroup)
 			auth.DELETE("/groups/:id", handlers.DeleteGroup)
 			auth.POST("/groups/:groupId/feeds/:feedId", handlers.AddFeedToGroup)
 			auth.DELETE("/groups/:groupId/feeds/:feedId", handlers.RemoveFeedFromGroup)
+
+			auth.PUT("/feeds/:id/fetch-interval", handlers.UpdateFeedFetchInterval)
 
 			auth.GET("/articles", handlers.GetArticles)
 			auth.GET("/articles/:id", handlers.GetArticle)

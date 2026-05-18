@@ -275,6 +275,59 @@ func DeleteGroup(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Group deleted"})
 }
 
+func UpdateGroup(c *gin.Context) {
+	userID := c.GetInt64("userID")
+	groupID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group ID"})
+		return
+	}
+
+	var req struct {
+		Name      string `json:"name"`
+		SortOrder int    `json:"sort_order"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	group, err := services.UpdateGroup(userID, groupID, req.Name, req.SortOrder)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update group"})
+		return
+	}
+
+	c.JSON(http.StatusOK, group)
+}
+
+func UpdateFeedFetchInterval(c *gin.Context) {
+	userID := c.GetInt64("userID")
+	feedID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid feed ID"})
+		return
+	}
+
+	var req struct {
+		FetchInterval int `json:"fetch_interval"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	feed, err := services.UpdateFeedFetchInterval(userID, feedID, req.FetchInterval)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update feed fetch interval"})
+		return
+	}
+
+	c.JSON(http.StatusOK, feed)
+}
+
 func GetArticles(c *gin.Context) {
 	userID := c.GetInt64("userID")
 
@@ -420,7 +473,23 @@ func SearchArticles(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	perPage, _ := strconv.Atoi(c.DefaultQuery("per_page", "20"))
 
-	articles, total, err := services.SearchArticles(userID, query, page, perPage)
+	var filters services.SearchFilters
+
+	if feedIDStr := c.Query("feed_id"); feedIDStr != "" {
+		if feedID, err := strconv.ParseInt(feedIDStr, 10, 64); err == nil {
+			filters.FeedID = &feedID
+		}
+	}
+
+	if startDate := c.Query("start_date"); startDate != "" {
+		filters.StartDate = &startDate
+	}
+
+	if endDate := c.Query("end_date"); endDate != "" {
+		filters.EndDate = &endDate
+	}
+
+	articles, total, err := services.SearchArticles(userID, query, filters, page, perPage)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to search articles"})
 		return

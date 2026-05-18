@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -177,4 +179,148 @@ func splitFeedIDs(s string) []int64 {
 
 func containsKeyword(s, keyword string) bool {
 	return strings.Contains(strings.ToLower(s), strings.ToLower(keyword))
+}
+
+func ProcessHourlyWebhookDigest() {
+	processWebhookDigest("hourly")
+}
+
+func ProcessDailyWebhookDigest() {
+	processWebhookDigest("daily")
+}
+
+func processWebhookDigest(frequency string) {
+	rows, err := database.DB.Query(
+		`SELECT DISTINCT user_id FROM webhook_configs WHERE enabled = 1 AND frequency = ?`,
+		frequency,
+	)
+	if err != nil {
+		log.Printf("Error getting webhook configs: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	var userIDs []int64
+	for rows.Next() {
+		var userID int64
+		if err := rows.Scan(&userID); err == nil {
+			userIDs = append(userIDs, userID)
+		}
+	}
+
+	for _, userID := range userIDs {
+		sendWebhookDigestForUser(userID, frequency)
+	}
+}
+
+func sendWebhookDigestForUser(userID int64, frequency string) {
+	configRows, err := database.DB.Query(
+		`SELECT id, url, keywords, feed_ids FROM webhook_configs 
+		 WHERE user_id = ? AND enabled = 1 AND frequency = ?`,
+		userID, frequency,
+	)
+	if err != nil {
+		log.Printf("Error getting webhook configs for user %d: %v", userID, err)
+		return
+	}
+	defer configRows.Close()
+
+	var timeFilter string
+	if frequency == "hourly" {
+		timeFilter = "datetime('now', '-1 hour')"
+	} else {
+		timeFilter = "datetime('now', '-24 hours')"
+	}
+
+	for configRows.Next() {
+		var configID int64
+		var url, keywords, feedIDs string
+		if err := configRows.Scan(&configID, &url, &keywords, &feedIDs); err != nil {
+			continue
+		}
+
+		var articleArgs []interface{}
+		articleQuery := `
+			SELECT id, title, url, author, published_at, feed_id
+			FROM articles 
+			WHERE user_id = ? AND published_at >= ` + timeFilter
+
+		articleArgs = append(articleArgs, userID)
+
+		if feedIDs != "" {
+			feedIDList := strings.Split(feedIDs, ",")
+			placeholders := strings.Repeat("?,", len(feedIDList))
+			articleQuery += " AND feed_id IN (" + placeholders[:len(placeholders)-1] + ")"
+			for _, fid := range feedIDList {
+				if id, err := strconv.ParseInt(strings.TrimSpace(fid), 10, 64); err == nil {
+					articleArgs = append(articleArgs, id)
+				}
+			}
+		}
+
+		articleQuery += " ORDER BY published_at DESC"
+
+		articleRows, err := database.DB.Query(articleQuery, articleArgs...)
+		if err != nil {
+			log.Printf("Error getting articles for digest: %v", err)
+			continue
+		}
+
+		type ArticleDigest struct {
+			ID          int64     `json:"id"`
+			Title       string    `json:"title"`
+			URL         string    `json:"url"`
+			Author      string    `json:"author"`
+			PublishedAt time.Time `json:"published_at"`
+			FeedID      int64     `json:"feed_id"`
+		}
+		var articles []ArticleDigest
+
+		for articleRows.Next() {
+			var a ArticleDigest
+			if err := articleRows.Scan(&a.ID, &a.Title, &a.URL, &a.Author, &a.PublishedAt, &a.FeedID); err == nil {
+				if keywords != "" {
+					keywordList := strings.Split(keywords, ",")
+					matched := false
+					for _, k := range keywordList {
+						if containsKeyword(a.Title, k) {
+							matched = true
+							break
+						}
+					}
+					if matched {
+						articles = append(articles, a)
+					}
+				} else {
+					articles = append(articles, a)
+				}
+			}
+		}
+		articleRows.Close()
+
+		if len(articles) > 0 {
+			payload := map[string]interface{}{
+				"type":      frequency + "_digest",
+				"articles":  articles,
+				"count":     len(articles),
+				"timestamp": time.Now(),
+			}
+
+			jsonData, err := json.Marshal(payload)
+			if err != nil {
+				continue
+			}
+
+			resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+			if err == nil {
+				resp.Body.Close()
+			}
+
+			database.DB.Exec(
+				`INSERT INTO notifications (user_id, type, title, content)
+				 VALUES (?, ?, ?, ?)`,
+				userID, "webhook_"+frequency, "Sent digest with "+strconv.Itoa(len(articles))+" articles", url,
+			)
+		}
+	}
 }

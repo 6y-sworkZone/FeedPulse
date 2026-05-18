@@ -127,6 +127,12 @@ func MarkArticleLater(userID, articleID int64, later bool) error {
 	return err
 }
 
+type SearchFilters struct {
+	FeedID     *int64
+	StartDate  *string
+	EndDate    *string
+}
+
 var fts5Available = true
 
 func checkFTS5Available() bool {
@@ -135,29 +141,55 @@ func checkFTS5Available() bool {
 	return err == nil && name != ""
 }
 
-func SearchArticles(userID int64, query string, page, perPage int) ([]models.Article, int, error) {
+func SearchArticles(userID int64, query string, filters SearchFilters, page, perPage int) ([]models.Article, int, error) {
 	searchPattern := "%" + query + "%"
 	
 	if fts5Available && checkFTS5Available() {
-		return searchWithFTS5(userID, query, page, perPage)
+		return searchWithFTS5(userID, query, filters, page, perPage)
 	}
 	
-	return searchWithLike(userID, searchPattern, page, perPage)
+	return searchWithLike(userID, searchPattern, filters, page, perPage)
 }
 
-func searchWithFTS5(userID int64, query string, page, perPage int) ([]models.Article, int, error) {
+func buildFilterConditions(filters SearchFilters) (string, []interface{}) {
+	conditions := ""
+	args := []interface{}{}
+
+	if filters.FeedID != nil {
+		conditions += " AND a.feed_id = ?"
+		args = append(args, *filters.FeedID)
+	}
+
+	if filters.StartDate != nil && *filters.StartDate != "" {
+		conditions += " AND a.published_at >= ?"
+		args = append(args, *filters.StartDate)
+	}
+
+	if filters.EndDate != nil && *filters.EndDate != "" {
+		conditions += " AND a.published_at <= ?"
+		args = append(args, *filters.EndDate)
+	}
+
+	return conditions, args
+}
+
+func searchWithFTS5(userID int64, query string, filters SearchFilters, page, perPage int) ([]models.Article, int, error) {
+	filterConditions, filterArgs := buildFilterConditions(filters)
+	
 	countQuery := `
 		SELECT COUNT(*)
 		FROM articles_fts fts
 		JOIN articles a ON fts.rowid = a.id
 		WHERE a.user_id = ? AND articles_fts MATCH ?
-	`
+	` + filterConditions
+
+	args := append([]interface{}{userID, query}, filterArgs...)
 
 	var total int
-	err := database.DB.QueryRow(countQuery, userID, query).Scan(&total)
+	err := database.DB.QueryRow(countQuery, args...).Scan(&total)
 	if err != nil {
 		fts5Available = false
-		return searchWithLike(userID, "%"+query+"%", page, perPage)
+		return searchWithLike(userID, "%"+query+"%", filters, page, perPage)
 	}
 
 	searchQuery := `
@@ -167,14 +199,18 @@ func searchWithFTS5(userID int64, query string, page, perPage int) ([]models.Art
 		FROM articles_fts fts
 		JOIN articles a ON fts.rowid = a.id
 		WHERE a.user_id = ? AND articles_fts MATCH ?
+	` + filterConditions + `
 		ORDER BY rank, a.published_at DESC
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := database.DB.Query(searchQuery, userID, query, perPage, (page-1)*perPage)
+	args = append([]interface{}{userID, query}, filterArgs...)
+	args = append(args, perPage, (page-1)*perPage)
+
+	rows, err := database.DB.Query(searchQuery, args...)
 	if err != nil {
 		fts5Available = false
-		return searchWithLike(userID, "%"+query+"%", page, perPage)
+		return searchWithLike(userID, "%"+query+"%", filters, page, perPage)
 	}
 	defer rows.Close()
 
@@ -194,15 +230,19 @@ func searchWithFTS5(userID int64, query string, page, perPage int) ([]models.Art
 	return articles, total, nil
 }
 
-func searchWithLike(userID int64, pattern string, page, perPage int) ([]models.Article, int, error) {
+func searchWithLike(userID int64, pattern string, filters SearchFilters, page, perPage int) ([]models.Article, int, error) {
+	filterConditions, filterArgs := buildFilterConditions(filters)
+	
 	countQuery := `
 		SELECT COUNT(*)
 		FROM articles a
 		WHERE a.user_id = ? AND (a.title LIKE ? OR a.content LIKE ? OR a.author LIKE ?)
-	`
+	` + filterConditions
+
+	args := append([]interface{}{userID, pattern, pattern, pattern}, filterArgs...)
 
 	var total int
-	err := database.DB.QueryRow(countQuery, userID, pattern, pattern, pattern).Scan(&total)
+	err := database.DB.QueryRow(countQuery, args...).Scan(&total)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -213,11 +253,15 @@ func searchWithLike(userID int64, pattern string, page, perPage int) ([]models.A
 		       a.is_later, a.read_at, a.created_at
 		FROM articles a
 		WHERE a.user_id = ? AND (a.title LIKE ? OR a.content LIKE ? OR a.author LIKE ?)
+	` + filterConditions + `
 		ORDER BY a.published_at DESC
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := database.DB.Query(searchQuery, userID, pattern, pattern, pattern, perPage, (page-1)*perPage)
+	args = append([]interface{}{userID, pattern, pattern, pattern}, filterArgs...)
+	args = append(args, perPage, (page-1)*perPage)
+
+	rows, err := database.DB.Query(searchQuery, args...)
 	if err != nil {
 		return nil, 0, err
 	}

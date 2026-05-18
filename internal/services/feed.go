@@ -213,6 +213,28 @@ func DeleteGroup(userID, groupID int64) error {
 	return err
 }
 
+func UpdateGroup(userID, groupID int64, name string, sortOrder int) (*models.Group, error) {
+	_, err := database.DB.Exec(
+		"UPDATE groups SET name = ?, sort_order = ?, updated_at = ? WHERE id = ? AND user_id = ?",
+		name, sortOrder, time.Now(), groupID, userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return GetGroupByID(groupID)
+}
+
+func UpdateFeedFetchInterval(userID, feedID int64, fetchInterval int) (*models.Feed, error) {
+	_, err := database.DB.Exec(
+		"UPDATE feeds SET fetch_interval = ?, updated_at = ? WHERE id = ? AND user_id = ?",
+		fetchInterval, time.Now(), feedID, userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return GetFeedByID(feedID)
+}
+
 func ImportOPML(userID int64, opmlData []byte) error {
 	opml, err := utils.ParseOPML(strings.NewReader(string(opmlData)))
 	if err != nil {
