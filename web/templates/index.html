@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FeedPulse - RSS 阅读器</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div id="app">
+        <div id="auth-container" class="auth-container">
+            <div class="auth-box">
+                <h1>FeedPulse</h1>
+                <div class="tabs">
+                    <button class="tab active" data-tab="login">登录</button>
+                    <button class="tab" data-tab="register">注册</button>
+                </div>
+                
+                <form id="login-form" class="auth-form active">
+                    <div class="form-group">
+                        <label>邮箱</label>
+                        <input type="email" id="login-email" required>
+                    </div>
+                    <div class="form-group">
+                        <label>密码</label>
+                        <input type="password" id="login-password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">登录</button>
+                </form>
+
+                <form id="register-form" class="auth-form">
+                    <div class="form-group">
+                        <label>用户名</label>
+                        <input type="text" id="register-username" required>
+                    </div>
+                    <div class="form-group">
+                        <label>邮箱</label>
+                        <input type="email" id="register-email" required>
+                    </div>
+                    <div class="form-group">
+                        <label>密码</label>
+                        <input type="password" id="register-password" required minlength="6">
+                    </div>
+                    <button type="submit" class="btn btn-primary">注册</button>
+                </form>
+            </div>
+        </div>
+
+        <div id="main-container" class="main-container hidden">
+            <header class="header">
+                <div class="logo">FeedPulse</div>
+                <div class="search-bar">
+                    <input type="text" id="search-input" placeholder="搜索文章...">
+                </div>
+                <div class="user-menu">
+                    <span id="user-name"></span>
+                    <button id="logout-btn" class="btn btn-small">退出</button>
+                </div>
+            </header>
+
+            <div class="content">
+                <aside class="sidebar">
+                    <div class="sidebar-section">
+                        <button id="add-feed-btn" class="btn btn-primary btn-block">+ 添加订阅</button>
+                    </div>
+                    
+                    <nav class="nav-menu">
+                        <a href="#" class="nav-item active" data-view="all">
+                            <span class="nav-icon">📄</span>
+                            <span>所有文章</span>
+                        </a>
+                        <a href="#" class="nav-item" data-view="unread">
+                            <span class="nav-icon">⭕</span>
+                            <span>未读</span>
+                            <span class="badge" id="unread-count">0</span>
+                        </a>
+                        <a href="#" class="nav-item" data-view="starred">
+                            <span class="nav-icon">⭐</span>
+                            <span>收藏</span>
+                        </a>
+                        <a href="#" class="nav-item" data-view="later">
+                            <span class="nav-icon">🕐</span>
+                            <span>稍后阅读</span>
+                        </a>
+                    </nav>
+
+                    <div class="sidebar-section">
+                        <h3>订阅源</h3>
+                        <div id="feeds-list" class="feeds-list"></div>
+                    </div>
+
+                    <div class="sidebar-section">
+                        <h3>分组</h3>
+                        <button id="add-group-btn" class="btn btn-small btn-block">+ 添加分组</button>
+                        <div id="groups-list" class="groups-list"></div>
+                    </div>
+                </aside>
+
+                <main class="article-list" id="article-list">
+                </main>
+
+                <aside class="article-detail hidden" id="article-detail">
+                    <div class="detail-header">
+                        <button class="close-btn" id="close-detail">✕</button>
+                        <div class="article-actions">
+                            <button class="action-btn" id="mark-read-btn" title="标记已读">📖</button>
+                            <button class="action-btn" id="star-btn" title="收藏">☆</button>
+                            <button class="action-btn" id="later-btn" title="稍后阅读">🕐</button>
+                            <a href="#" id="article-link" target="_blank" class="action-btn" title="原文链接">🔗</a>
+                        </div>
+                    </div>
+                    <div class="detail-content" id="detail-content"></div>
+                </aside>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal" class="modal hidden">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
